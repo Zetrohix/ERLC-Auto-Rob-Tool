@@ -1,10 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
-        <OutputType>Exe</OutputType>
-        <TargetFramework>net6.0</TargetFramework>
+        <OutputType>WinExe</OutputType> <!-- Changed from Exe to WinExe for Windows Application -->
+        <TargetFramework>net6.0-windows</TargetFramework> <!-- Added -windows for WinForms -->
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
+        <UseWindowsForms>true</UseWindowsForms> <!-- Added for WinForms support -->
         <DockerDefaultTargetOS>Windows</DockerDefaultTargetOS>
     </PropertyGroup>
 

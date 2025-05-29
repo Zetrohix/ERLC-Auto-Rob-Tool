@@ -1,8 +1,13 @@
+using System;
+using System.Collections.Generic;
 using System.Drawing;
+using System.Threading; // Required for Thread.Sleep
+using ERLC; // Required for Screen, Roblox, Mouse classes
 
 namespace ERLC.Robberies;
-public class LockPicking
+public class LockPicking // Made non-static
 {
+    // Constants remain the same
     private const int StartTime = 1; // Time in seconds to wait before starting the lockpicking process.
     private const string LineColorHtmlString = "#FFC903"; // HTML color code for the yellow line in the lockpicking minigame.
     private const int BarSizeOffsetBase = 83; // Base offset in pixels for calculating the position of each bar in the lockpicking minigame.
@@ -13,69 +18,144 @@ public class LockPicking
     private const int TargetAreaVerticalRadius = 3; // Defines the vertical radius (in pixels) above and below the detected line's Y-coordinate to scan for bright pixels.
     private const int MinBrightPixelsForClick = 4;  // Minimum number of bright pixels that must be detected within the target area to trigger a click.
 
-    private static Color LineColor = ColorTranslator.FromHtml(LineColorHtmlString); // Translates the HTML color string to a Color object.
-    
-    public static void StartProcess()
-    {
-        Console.WriteLine($"i ~ Starting process in {StartTime}");
-        Roblox.FocusRoblox();
+    private Color _lineColorInstance = ColorTranslator.FromHtml(LineColorHtmlString); // Instance field for color
 
+    // Helper method for drawing text
+    private Action<Graphics> CreateTextAction(string text, PointF position, Brush brush, Font font)
+    {
+        return g => g.DrawString(text, font, brush, position);
+    }
+    
+    // Helper method for drawing rectangles
+    private Action<Graphics> CreateRectangleAction(Pen pen, Rectangle rect)
+    {
+        return g => g.DrawRectangle(pen, rect);
+    }
+
+    // Helper method for drawing filled rectangles (for markers, etc.)
+    private Action<Graphics> CreateFilledRectangleAction(Brush brush, Rectangle rect)
+    {
+        return g => g.FillRectangle(brush, rect);
+    }
+
+
+    public void StartLockpickingWithOverlay(Action<List<Action<Graphics>>> updateOverlayCallback, Action<string> updateStatusCallback)
+    {
+        var drawingActions = new List<Action<Graphics>>();
+        var defaultFont = new Font("Arial", 12, FontStyle.Bold);
+        var statusFont = new Font("Arial", 16, FontStyle.Bold);
+        var goodBrush = Brushes.LightGreen;
+        var badBrush = Brushes.Red;
+        var infoBrush = Brushes.Cyan;
+
+        updateStatusCallback("Initializing Lockpicking...");
+        drawingActions.Add(CreateTextAction("Initializing Lockpicking...", new PointF(10, 30), infoBrush, statusFont));
+        updateOverlayCallback(new List<Action<Graphics>>(drawingActions)); // Make a copy
+
+        Roblox.FocusRoblox();
         Thread.Sleep(StartTime * 1000);
 
         int barSizeOffset = (int)Math.Floor(BarSizeOffsetBase * Screen.SystemScaleMultiplier);
 
-        // Locate the yellow line, now using tolerance for more robust detection.
-        var (linePosX, linePosY) = Screen.LocateColor(LineColor, LineColorTolerance);
+        updateStatusCallback("Searching for lockpicking line...");
+        drawingActions.Clear();
+        // Define a search area for the line (example: middle third of the screen horizontally, full height)
+        Rectangle lineSearchArea = new Rectangle(
+            System.Windows.Forms.Screen.PrimaryScreen.Bounds.Width / 3, 
+            0, 
+            System.Windows.Forms.Screen.PrimaryScreen.Bounds.Width / 3, 
+            System.Windows.Forms.Screen.PrimaryScreen.Bounds.Height
+        );
+        drawingActions.Add(CreateRectangleAction(new Pen(Color.FromArgb(100, Color.Blue), 2), lineSearchArea));
+        drawingActions.Add(CreateTextAction("Searching for line...", new PointF(lineSearchArea.X + 5, lineSearchArea.Y + 5), infoBrush, defaultFont));
+        updateOverlayCallback(new List<Action<Graphics>>(drawingActions));
+
+        var (linePosX, linePosY) = Screen.LocateColor(_lineColorInstance, LineColorTolerance, lineSearchArea);
+        
+        drawingActions.Clear(); // Clear previous search area drawing
+
         if (linePosX == 0 && linePosY == 0)
         {
-            Console.WriteLine("! ~ LockPicking line could not be found!");
+            updateStatusCallback("Lockpicking line NOT found!");
+            drawingActions.Add(CreateTextAction("Lockpicking line NOT found!", new PointF(10, 30), badBrush, statusFont));
+            updateOverlayCallback(new List<Action<Graphics>>(drawingActions));
+            Thread.Sleep(2000); // Show message for a bit
             return;
         }
 
-        Console.WriteLine($"i ~ Found Line at {linePosY}, {linePosY}");
+        updateStatusCallback($"Line found at ({linePosX}, {linePosY})");
+        Rectangle lineMarkerRect = new Rectangle(linePosX - 5, linePosY - 5, 10, 10);
+        drawingActions.Add(CreateFilledRectangleAction(Brushes.Green, lineMarkerRect));
+        drawingActions.Add(CreateTextAction($"Line at ({linePosX},{linePosY})", new PointF(linePosX + 15, linePosY - 7), goodBrush, defaultFont));
+        updateOverlayCallback(new List<Action<Graphics>>(drawingActions)); // Show line marker before proceeding
+        Thread.Sleep(500); // Briefly show the line marker
 
         for (int rectI = 1; rectI < 7; rectI++)
         {
-            int x = linePosX + (barSizeOffset * rectI);
-            //Mouse.SetMousePos(x, linePosY);
-            while (true)
+            int currentBarX = linePosX + (barSizeOffset * rectI);
+            updateStatusCallback($"Checking bar {rectI} at X: {currentBarX}");
+            
+            // Prepare a fresh list for each bar's check cycle
+            var currentBarDrawingActions = new List<Action<Graphics>>();
+            currentBarDrawingActions.Add(CreateFilledRectangleAction(Brushes.Green, lineMarkerRect)); // Keep line marker
+            currentBarDrawingActions.Add(CreateTextAction($"Line at ({linePosX},{linePosY})", new PointF(linePosX + 15, linePosY - 7), goodBrush, defaultFont));
+            currentBarDrawingActions.Add(CreateTextAction($"Checking Bar {rectI}", new PointF(currentBarX - 30, linePosY - 50), infoBrush, defaultFont));
+
+
+            while (true) // This inner loop should ideally have a timeout or escape
             {
+                var perLoopDrawingActions = new List<Action<Graphics>>(currentBarDrawingActions); // Start with base drawings for this bar
                 int brightPixelCount = 0;
-                // Check a vertical strip of pixels around the detected line's Y-coordinate for the current bar (x).
-                // This area-based approach requires a minimum number of pixels (MinBrightPixelsForClick)
-                // within this strip (defined by TargetAreaVerticalRadius) to be "bright" (RgbBrightnessThreshold)
-                // before triggering a click, making the detection more resilient to minor variations.
+
                 for (int yOffset = -TargetAreaVerticalRadius; yOffset <= TargetAreaVerticalRadius; yOffset++)
                 {
-                    Color pixelColor = Screen.GetColorAtPixel(x, linePosY + yOffset);
-                    if (pixelColor.R > RgbBrightnessThreshold && 
-                        pixelColor.G > RgbBrightnessThreshold && 
-                        pixelColor.B > RgbBrightnessThreshold)
+                    int checkY = linePosY + yOffset;
+                    Color pixelColor = Screen.GetColorAtPixel(currentBarX, checkY);
+                    Rectangle pixelCheckRect = new Rectangle(currentBarX - 2, checkY - 2, 5, 5);
+                    bool isBright = pixelColor.R > RgbBrightnessThreshold &&
+                                    pixelColor.G > RgbBrightnessThreshold &&
+                                    pixelColor.B > RgbBrightnessThreshold;
+
+                    if (isBright)
                     {
                         brightPixelCount++;
+                        perLoopDrawingActions.Add(CreateFilledRectangleAction(Brushes.LimeGreen, pixelCheckRect));
+                    }
+                    else
+                    {
+                        perLoopDrawingActions.Add(CreateRectangleAction(Pens.DarkGray, pixelCheckRect));
                     }
                 }
+                
+                perLoopDrawingActions.Add(CreateTextAction($"Bright: {brightPixelCount}/{MinBrightPixelsForClick}", new PointF(currentBarX + 10, linePosY + 10), brightPixelCount >= MinBrightPixelsForClick ? goodBrush : badBrush, defaultFont));
+                updateOverlayCallback(new List<Action<Graphics>>(perLoopDrawingActions));
+
 
                 if (brightPixelCount >= MinBrightPixelsForClick)
                 {
                     Mouse.LeftClick();
-                    // Consider if Mouse.SetMousePos(x, linePosY); is still needed here or if it should be before the check.
-                    // For now, keep it consistent with the old logic's placement.
-                    Mouse.SetMousePos(x, linePosY); 
-                    Console.WriteLine($"Clicked for bar {rectI} with {brightPixelCount} bright pixels.");
-
+                    Mouse.SetMousePos(currentBarX, linePosY); // As per original logic
+                    updateStatusCallback($"Clicked bar {rectI} ({brightPixelCount} bright pixels).");
+                    
+                    // Add visual confirmation of click
+                    var finalBarActions = new List<Action<Graphics>>(currentBarDrawingActions); // Base drawings
+                    finalBarActions.Add(CreateTextAction($"Clicked Bar {rectI}!", new PointF(currentBarX - 30, linePosY - 30), goodBrush, statusFont));
+                    updateOverlayCallback(new List<Action<Graphics>>(finalBarActions));
                     Thread.Sleep(110); // Keep existing delay
                     break; 
                 }
                 
-                // It's good practice to add a small sleep in a tight while(true) loop 
-                // if the condition isn't met, to prevent high CPU usage.
-                // However, the original code didn't have this, and the game's lockpicking speed might be sensitive.
-                // Let's add a very small one for now.
-                Thread.Sleep(10); // Added a small delay to prevent busy-waiting if no click condition met.
+                Thread.Sleep(10); // Prevent busy-waiting
             }
         }
-
-        Console.WriteLine("i ~ Robbing Finished!");
+        
+        drawingActions.Clear();
+        updateStatusCallback("Lockpicking finished!");
+        drawingActions.Add(CreateTextAction("Lockpicking Finished!", new PointF(10, 30), goodBrush, statusFont));
+        updateOverlayCallback(new List<Action<Graphics>>(drawingActions));
+        Thread.Sleep(1500); // Show final status
+        
+        // Clear overlay one last time
+        updateOverlayCallback(new List<Action<Graphics>>());
     }
 }
