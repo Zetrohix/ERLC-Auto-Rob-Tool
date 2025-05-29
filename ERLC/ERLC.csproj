@@ -1,11 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
-        <OutputType>WinExe</OutputType> <!-- Changed from Exe to WinExe for Windows Application -->
-        <TargetFramework>net6.0-windows</TargetFramework> <!-- Added -windows for WinForms -->
+        <OutputType>Exe</OutputType> <!-- Reverted to Exe -->
+        <TargetFramework>net6.0</TargetFramework> <!-- Reverted to net6.0 -->
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
-        <UseWindowsForms>true</UseWindowsForms> <!-- Added for WinForms support -->
+        <!-- Removed <UseWindowsForms>true</UseWindowsForms> -->
         <DockerDefaultTargetOS>Windows</DockerDefaultTargetOS>
     </PropertyGroup>
 
@@ -17,6 +17,7 @@
 
     <ItemGroup>
       <PackageReference Include="System.Drawing.Common" Version="8.0.2" />
+      <PackageReference Include="Spectre.Console" Version="0.48.0" />
     </ItemGroup>
 
 </Project>

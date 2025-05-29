@@ -1,161 +1,102 @@
 using System;
-using System.Collections.Generic;
-using System.Drawing;
-using System.Threading; // Required for Thread.Sleep
-using ERLC; // Required for Screen, Roblox, Mouse classes
+using System.Drawing; 
+using System.Threading; 
+using ERLC; 
+using Spectre.Console; // Added for Spectre.Console
 
 namespace ERLC.Robberies;
-public class LockPicking // Made non-static
+public class LockPicking // Remains non-static
 {
     // Constants remain the same
-    private const int StartTime = 1; // Time in seconds to wait before starting the lockpicking process.
-    private const string LineColorHtmlString = "#FFC903"; // HTML color code for the yellow line in the lockpicking minigame.
-    private const int BarSizeOffsetBase = 83; // Base offset in pixels for calculating the position of each bar in the lockpicking minigame.
-    private const int UpperColorOffset = -4; // Vertical offset (in pixels) from the detected line to check for a secondary color point (original logic).
-    private const int LowerColorOffset = 10; // Vertical offset (in pixels) from the detected line to check for a primary color point (original logic, now mostly superseded by area check).
-    private const int RgbBrightnessThreshold = 140; // Minimum RGB value (for R, G, and B components) to consider a pixel "bright".
-    private const int LineColorTolerance = 10; // Tolerance value used when searching for the line color, allowing for slight variations.
-    private const int TargetAreaVerticalRadius = 3; // Defines the vertical radius (in pixels) above and below the detected line's Y-coordinate to scan for bright pixels.
-    private const int MinBrightPixelsForClick = 4;  // Minimum number of bright pixels that must be detected within the target area to trigger a click.
+    private const int StartTime = 1; 
+    private const string LineColorHtmlString = "#FFC903"; 
+    private const int BarSizeOffsetBase = 83; 
+    private const int UpperColorOffset = -4; 
+    private const int LowerColorOffset = 10; 
+    private const int RgbBrightnessThreshold = 140; 
+    private const int LineColorTolerance = 10; 
+    private const int TargetAreaVerticalRadius = 3; 
+    private const int MinBrightPixelsForClick = 4;  
 
-    private Color _lineColorInstance = ColorTranslator.FromHtml(LineColorHtmlString); // Instance field for color
+    private Color _lineColorInstance = ColorTranslator.FromHtml(LineColorHtmlString); 
 
-    // Helper method for drawing text
-    private Action<Graphics> CreateTextAction(string text, PointF position, Brush brush, Font font)
+    public void StartProcess() 
     {
-        return g => g.DrawString(text, font, brush, position);
-    }
-    
-    // Helper method for drawing rectangles
-    private Action<Graphics> CreateRectangleAction(Pen pen, Rectangle rect)
-    {
-        return g => g.DrawRectangle(pen, rect);
-    }
+        AnsiConsole.Write(new Rule($"[bold yellow]Lockpicking Sequence Started[/]").LeftJustified());
+        AnsiConsole.MarkupLine("\n[cyan]i Initializing Lockpicking...[/]");
 
-    // Helper method for drawing filled rectangles (for markers, etc.)
-    private Action<Graphics> CreateFilledRectangleAction(Brush brush, Rectangle rect)
-    {
-        return g => g.FillRectangle(brush, rect);
-    }
-
-
-    public void StartLockpickingWithOverlay(Action<List<Action<Graphics>>> updateOverlayCallback, Action<string> updateStatusCallback)
-    {
-        var drawingActions = new List<Action<Graphics>>();
-        var defaultFont = new Font("Arial", 12, FontStyle.Bold);
-        var statusFont = new Font("Arial", 16, FontStyle.Bold);
-        var goodBrush = Brushes.LightGreen;
-        var badBrush = Brushes.Red;
-        var infoBrush = Brushes.Cyan;
-
-        updateStatusCallback("Initializing Lockpicking...");
-        drawingActions.Add(CreateTextAction("Initializing Lockpicking...", new PointF(10, 30), infoBrush, statusFont));
-        updateOverlayCallback(new List<Action<Graphics>>(drawingActions)); // Make a copy
-
+        AnsiConsole.MarkupLine("[yellow]i Focusing Roblox window...[/]");
         Roblox.FocusRoblox();
-        Thread.Sleep(StartTime * 1000);
+        Thread.Sleep(StartTime * 1000); // Wait for focus
 
         int barSizeOffset = (int)Math.Floor(BarSizeOffsetBase * Screen.SystemScaleMultiplier);
+        AnsiConsole.MarkupLine($"[dim]  Bar offset calculated with scale multiplier ({Screen.SystemScaleMultiplier}): {barSizeOffset} pixels[/]");
 
-        updateStatusCallback("Searching for lockpicking line...");
-        drawingActions.Clear();
-        // Define a search area for the line (example: middle third of the screen horizontally, full height)
-        Rectangle lineSearchArea = new Rectangle(
-            System.Windows.Forms.Screen.PrimaryScreen.Bounds.Width / 3, 
-            0, 
-            System.Windows.Forms.Screen.PrimaryScreen.Bounds.Width / 3, 
-            System.Windows.Forms.Screen.PrimaryScreen.Bounds.Height
-        );
-        drawingActions.Add(CreateRectangleAction(new Pen(Color.FromArgb(100, Color.Blue), 2), lineSearchArea));
-        drawingActions.Add(CreateTextAction("Searching for line...", new PointF(lineSearchArea.X + 5, lineSearchArea.Y + 5), infoBrush, defaultFont));
-        updateOverlayCallback(new List<Action<Graphics>>(drawingActions));
-
-        var (linePosX, linePosY) = Screen.LocateColor(_lineColorInstance, LineColorTolerance, lineSearchArea);
+        AnsiConsole.MarkupLine("\n[cyan]i Searching for lockpicking line...[/]");
+        var (linePosX, linePosY) = Screen.LocateColor(_lineColorInstance, LineColorTolerance);
         
-        drawingActions.Clear(); // Clear previous search area drawing
-
         if (linePosX == 0 && linePosY == 0)
         {
-            updateStatusCallback("Lockpicking line NOT found!");
-            drawingActions.Add(CreateTextAction("Lockpicking line NOT found!", new PointF(10, 30), badBrush, statusFont));
-            updateOverlayCallback(new List<Action<Graphics>>(drawingActions));
-            Thread.Sleep(2000); // Show message for a bit
+            AnsiConsole.MarkupLine("[bold red]! Lockpicking line NOT found![/]");
+            AnsiConsole.MarkupLine("[dim]  Ensure the lockpicking minigame is active and visible.[/]");
+            AnsiConsole.MarkupLine("[dim]  Try adjusting screen/game brightness or tool's RGB threshold if issues persist.[/]");
+            Thread.Sleep(2500); 
+            AnsiConsole.Write(new Rule($"[bold red]Lockpicking Failed[/]").LeftJustified());
             return;
         }
 
-        updateStatusCallback($"Line found at ({linePosX}, {linePosY})");
-        Rectangle lineMarkerRect = new Rectangle(linePosX - 5, linePosY - 5, 10, 10);
-        drawingActions.Add(CreateFilledRectangleAction(Brushes.Green, lineMarkerRect));
-        drawingActions.Add(CreateTextAction($"Line at ({linePosX},{linePosY})", new PointF(linePosX + 15, linePosY - 7), goodBrush, defaultFont));
-        updateOverlayCallback(new List<Action<Graphics>>(drawingActions)); // Show line marker before proceeding
-        Thread.Sleep(500); // Briefly show the line marker
+        AnsiConsole.MarkupLine($"[green]i Line found at (X: {linePosX}, Y: {linePosY})[/]");
+        Thread.Sleep(500); // User can see the confirmation
 
+        AnsiConsole.Write(new Rule($"[bold blue]Processing Bars[/]").Centered());
         for (int rectI = 1; rectI < 7; rectI++)
         {
             int currentBarX = linePosX + (barSizeOffset * rectI);
-            updateStatusCallback($"Checking bar {rectI} at X: {currentBarX}");
+            AnsiConsole.MarkupLine($"\n[bold blue]== Processing Bar {rectI}/6 ==[/]");
+            AnsiConsole.MarkupLine($"[dim]  Targeting X-coordinate: {currentBarX}[/]");
             
-            // Prepare a fresh list for each bar's check cycle
-            var currentBarDrawingActions = new List<Action<Graphics>>();
-            currentBarDrawingActions.Add(CreateFilledRectangleAction(Brushes.Green, lineMarkerRect)); // Keep line marker
-            currentBarDrawingActions.Add(CreateTextAction($"Line at ({linePosX},{linePosY})", new PointF(linePosX + 15, linePosY - 7), goodBrush, defaultFont));
-            currentBarDrawingActions.Add(CreateTextAction($"Checking Bar {rectI}", new PointF(currentBarX - 30, linePosY - 50), infoBrush, defaultFont));
-
-
-            while (true) // This inner loop should ideally have a timeout or escape
-            {
-                var perLoopDrawingActions = new List<Action<Graphics>>(currentBarDrawingActions); // Start with base drawings for this bar
-                int brightPixelCount = 0;
-
-                for (int yOffset = -TargetAreaVerticalRadius; yOffset <= TargetAreaVerticalRadius; yOffset++)
+            // Using Spectre.Console's Status for the pixel checking loop
+            AnsiConsole.Status()
+                .Spinner(Spinner.Known.Dots)
+                .SpinnerStyle(Style.Parse("blue"))
+                .Start($"[yellow]Scanning pixels for bar {rectI}...[/]", ctx => 
                 {
-                    int checkY = linePosY + yOffset;
-                    Color pixelColor = Screen.GetColorAtPixel(currentBarX, checkY);
-                    Rectangle pixelCheckRect = new Rectangle(currentBarX - 2, checkY - 2, 5, 5);
-                    bool isBright = pixelColor.R > RgbBrightnessThreshold &&
-                                    pixelColor.G > RgbBrightnessThreshold &&
-                                    pixelColor.B > RgbBrightnessThreshold;
-
-                    if (isBright)
+                    while (true) 
                     {
-                        brightPixelCount++;
-                        perLoopDrawingActions.Add(CreateFilledRectangleAction(Brushes.LimeGreen, pixelCheckRect));
-                    }
-                    else
-                    {
-                        perLoopDrawingActions.Add(CreateRectangleAction(Pens.DarkGray, pixelCheckRect));
-                    }
-                }
-                
-                perLoopDrawingActions.Add(CreateTextAction($"Bright: {brightPixelCount}/{MinBrightPixelsForClick}", new PointF(currentBarX + 10, linePosY + 10), brightPixelCount >= MinBrightPixelsForClick ? goodBrush : badBrush, defaultFont));
-                updateOverlayCallback(new List<Action<Graphics>>(perLoopDrawingActions));
+                        int brightPixelCount = 0;
+                        for (int yOffset = -TargetAreaVerticalRadius; yOffset <= TargetAreaVerticalRadius; yOffset++)
+                        {
+                            int checkY = linePosY + yOffset;
+                            // For performance, avoid logging every pixel check. 
+                            // AnsiConsole.MarkupLine($"  [grey]Checking pixel at ({currentBarX}, {checkY})[/]");
+                            Color pixelColor = Screen.GetColorAtPixel(currentBarX, checkY);
+                            bool isBright = pixelColor.R > RgbBrightnessThreshold &&
+                                            pixelColor.G > RgbBrightnessThreshold &&
+                                            pixelColor.B > RgbBrightnessThreshold;
 
-
-                if (brightPixelCount >= MinBrightPixelsForClick)
-                {
-                    Mouse.LeftClick();
-                    Mouse.SetMousePos(currentBarX, linePosY); // As per original logic
-                    updateStatusCallback($"Clicked bar {rectI} ({brightPixelCount} bright pixels).");
-                    
-                    // Add visual confirmation of click
-                    var finalBarActions = new List<Action<Graphics>>(currentBarDrawingActions); // Base drawings
-                    finalBarActions.Add(CreateTextAction($"Clicked Bar {rectI}!", new PointF(currentBarX - 30, linePosY - 30), goodBrush, statusFont));
-                    updateOverlayCallback(new List<Action<Graphics>>(finalBarActions));
-                    Thread.Sleep(110); // Keep existing delay
-                    break; 
-                }
-                
-                Thread.Sleep(10); // Prevent busy-waiting
-            }
+                            if (isBright)
+                            {
+                                brightPixelCount++;
+                            }
+                        }
+                        ctx.Status($"[yellow]Scanning pixels for bar {rectI}... Found {brightPixelCount}/{MinBrightPixelsForClick} bright pixels.[/]");
+                        
+                        if (brightPixelCount >= MinBrightPixelsForClick)
+                        {
+                            Mouse.LeftClick();
+                            Mouse.SetMousePos(currentBarX, linePosY); 
+                            AnsiConsole.MarkupLine($"[bold lime]>>> Clicked for bar {rectI}! (Bright pixels: {brightPixelCount}) <<<[/]");
+                            Thread.Sleep(110); // Keep existing delay post-click
+                            break; // Exit while loop for this bar
+                        }
+                        
+                        Thread.Sleep(10); // Short delay between checks to avoid busy-looping and reduce CPU
+                    }
+                });
         }
         
-        drawingActions.Clear();
-        updateStatusCallback("Lockpicking finished!");
-        drawingActions.Add(CreateTextAction("Lockpicking Finished!", new PointF(10, 30), goodBrush, statusFont));
-        updateOverlayCallback(new List<Action<Graphics>>(drawingActions));
-        Thread.Sleep(1500); // Show final status
-        
-        // Clear overlay one last time
-        updateOverlayCallback(new List<Action<Graphics>>());
+        AnsiConsole.MarkupLine("\n[bold green]i Lockpicking finished successfully![/]");
+        AnsiConsole.Write(new Rule($"[bold green]Lockpicking Sequence Complete[/]").LeftJustified());
+        Thread.Sleep(1500); 
     }
 }
